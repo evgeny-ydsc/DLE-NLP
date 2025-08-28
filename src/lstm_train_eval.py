@@ -1,4 +1,4 @@
-from src.lstm_model import LSTMGenerator
+from drive.MyDrive.project1.src.lstm_model import LSTMGenerator
 import evaluate
 import numpy as np
 import torch
@@ -39,7 +39,7 @@ class ModelTrainer ():
             i = int(l*0.75)
             start = line [:i]
             finish = line [i:]
-            predicted_finish = self.model.generate_output_text(start, l-i)
+            predicted_finish = self.model.generate_output_text(self.tokenizer, start, l-i)
             results = rouge.compute(predictions=[predicted_finish], references=[finish])
             rouge1.append(results["rouge1"])
             rouge2.append(results["rouge2"])

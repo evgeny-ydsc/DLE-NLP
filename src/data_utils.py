@@ -2,10 +2,8 @@ import os.path
 from pathlib import Path
 import urllib.request
 
-def download_dataset():
+def download_dataset(raw_dataset_url:str, raw_dataset_path:str):
     # чтобы не закачивать на github этот датасет, скачаем его (один раз):
-    RAW_DATASET_URL = "https://code.s3.yandex.net/deep-learning/tweets.txt"
-    RAW_DATASET_PATH = 'data/tweets.txt'
-    if not os.path.exists(RAW_DATASET_PATH):
-        urllib.request.urlretrieve(RAW_DATASET_URL, RAW_DATASET_PATH)
-    return RAW_DATASET_PATH
+
+    if not os.path.exists(raw_dataset_path):
+        urllib.request.urlretrieve(raw_dataset_url, raw_dataset_path)

@@ -42,7 +42,7 @@ def clean_string(text: str):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def prepare_loaders (dataset_path: str, max_texts_count: int = 10000):
+def prepare_loaders (dataset_path: str, batch_size=64, max_texts_count: int = 1000):
 
     with open(dataset_path, "r", encoding="utf-8") as f:
         dataset = list(f)
@@ -77,8 +77,8 @@ def prepare_loaders (dataset_path: str, max_texts_count: int = 10000):
     test_dataset = MaskedBertDataset(test_texts, tokenizer, seq_len=seq_len)
 
     # даталоадеры
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=64)
-    test_loader = DataLoader(test_dataset, batch_size=64)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
     return train_loader, val_loader, test_loader, tokenizer, val_texts, test_texts
