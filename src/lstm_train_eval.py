@@ -1,4 +1,4 @@
-from drive.MyDrive.project1.src.lstm_model import LSTMGenerator
+from src.lstm_model import LSTMGenerator
 import evaluate
 import numpy as np
 import torch
@@ -12,6 +12,7 @@ class ModelTrainer ():
         self.optimizer = Adam(model.parameters(), lr=0.002)
         self.criterion = nn.CrossEntropyLoss()
         self.tokenizer = tokenizer
+        self.device = model.device
 
     def evaluate(self, loader):
         self.model.eval()
@@ -20,7 +21,7 @@ class ModelTrainer ():
         sum_loss = 0
         with torch.no_grad():
             for x_batch, y_batch in loader:
-                x_batch, y_batch = x_batch, y_batch
+                x_batch, y_batch = x_batch.to(self.device), y_batch.to(self.device)
                 x_output = self.model(x_batch)
                 loss = self.criterion(x_output, y_batch)
                 preds = torch.argmax(x_output, dim=1)
@@ -31,27 +32,31 @@ class ModelTrainer ():
 
     def evaluate_on_full_texts(self, texts):
         rouge = evaluate.load("rouge")
-        rouge1 = []
-        rouge2 = []
         self.model.eval()
-        for line in texts:
-            l = len(line)
-            i = int(l*0.75)
-            start = line [:i]
-            finish = line [i:]
-            predicted_finish = self.model.generate_output_text(self.tokenizer, start, l-i)
-            results = rouge.compute(predictions=[predicted_finish], references=[finish])
-            rouge1.append(results["rouge1"])
-            rouge2.append(results["rouge2"])
-        return np.mean (rouge1), np.mean (rouge2)
 
+        predictions = []
+        references = []
+
+        for line in tqdm(texts, desc="Evaluating ROUGE"):
+            l = len(line)
+            i = int(l * 0.75)
+            start = line[:i]
+            finish = line[i:]
+
+            predicted_finish = self.model.generate_output_text(self.tokenizer, start, l - i)
+
+            predictions.append(predicted_finish)
+            references.append(finish)
+
+        results = rouge.compute(predictions=predictions, references=references)
+        return results["rouge1"], results["rouge2"]
 
     def train(self, train_loader, val_loader, val_texts, n_epochs=3):
         for epoch in range(n_epochs):
             self.model.train()
             train_loss = 0
             for x_batch, y_batch in tqdm(train_loader):
-                x_batch, y_batch = x_batch, y_batch
+                x_batch, y_batch = x_batch.to(self.device), y_batch.to(self.device)
                 self.optimizer.zero_grad()
                 loss = self.criterion(self.model(x_batch), y_batch)
                 loss.backward()

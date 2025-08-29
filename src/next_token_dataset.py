@@ -42,14 +42,14 @@ def clean_string(text: str):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def prepare_loaders (dataset_path: str, batch_size=64, max_texts_count: int = 1000):
+def prepare_loaders (dataset_path: str, batch_size=64, 
+                     max_texts_count: int = 1000, seq_len = 7):
 
     with open(dataset_path, "r", encoding="utf-8") as f:
         dataset = list(f)
 
     # длины последовательностей в датасете
     # seq_len = 7 => 6 токенов до <TARGET> + токен <TARGET>
-    seq_len = 7
 
     # удаляем слишком короткие тексты
     texts = [line for line in dataset if len(line.split()) >= seq_len]
