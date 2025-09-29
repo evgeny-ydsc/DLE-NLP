@@ -14,9 +14,12 @@ class Config:
     TEXT_LR = 3e-5
     IMAGE_LR = 1e-4
     REGRESSOR_LR = 5e-3
-    EPOCHS = 100
+    EPOCHS = 50
     DROPOUT = 0.3
     HIDDEN_DIM = 256
+    WEIGHT_DECAY = 1e-4
+    SCHEDULER_T_MAX = 10
+    SCHEDULER_ETA_MIN = 1e-6
     
     # Пути
     SAVE_PATH = "best_model.pth"

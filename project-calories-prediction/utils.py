@@ -12,12 +12,12 @@ from torch.utils.data import DataLoader
 from torchinfo import summary
 from functools import partial
 
-from dataset import MealDataset, collate_fn, get_transforms
-from config import Config
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
-
+from dataset import MealDataset, collate_fn, get_transforms
+from config import Config
 #from drive.MyDrive.ydsc.dataset import MealDataset, collate_fn, get_transforms
 #from drive.MyDrive.ydsc.config import Config
 
@@ -37,11 +37,16 @@ class MealMultimodalModel(nn.Module):
         for param in self.text_model.parameters():
             param.requires_grad = False
 
-        self.text_proj = nn.Linear(self.text_model.config.hidden_size, config.HIDDEN_DIM)
-        self.image_proj = nn.Linear(self.image_model.num_features, config.HIDDEN_DIM)
+        self.text_proj = nn.Sequential(
+            nn.Linear(self.text_model.config.hidden_size, config.HIDDEN_DIM),
+            nn.Dropout(0.3))
+
+        self.image_proj = nn.Sequential(
+            nn.Linear(self.image_model.num_features, config.HIDDEN_DIM),
+            nn.Dropout(0.3))
 
         self.regressor = nn.Sequential(
-            nn.Linear(config.HIDDEN_DIM*2, config.HIDDEN_DIM // 2),
+            nn.Linear(config.HIDDEN_DIM*2+1, config.HIDDEN_DIM // 2),
             nn.BatchNorm1d(config.HIDDEN_DIM // 2),
             nn.ReLU(),
             nn.Dropout(0.5),
@@ -52,15 +57,17 @@ class MealMultimodalModel(nn.Module):
             nn.Linear(config.HIDDEN_DIM // 4, 1) # 1- регрессия
         )
 
-    def forward(self, input_ids, attention_mask, image):
+    def forward(self, input_ids, attention_mask, image, mass):
         text_features = self.text_model(input_ids, attention_mask) \
                                 .last_hidden_state[:,  0, :]
         image_features = self.image_model(image)
+        scaled_mass = mass / 2_000.0 # из EDA знаем, что масса блюда была 1102
 
         text_emb = self.text_proj(text_features)
         image_emb = self.image_proj(image_features)
         
-        fused_emb = torch.cat([text_emb, image_emb], dim=1)
+        fused_emb = torch.cat([scaled_mass.unsqueeze(1),
+                               text_emb, image_emb], dim=1)
         
         output = self.regressor(fused_emb)
         return output
@@ -71,15 +78,26 @@ def train(config, train_dish_df, test_dish_df):
     # Инициализация модели
     model = MealMultimodalModel(config, print_model_info=True).to(device)
     tokenizer = AutoTokenizer.from_pretrained(config.TEXT_MODEL_NAME)
+    
 
     # Оптимизатор с разными LR
     optimizer = AdamW([
-        {'params': model.text_model.parameters(), 'lr': config.TEXT_LR},
-        {'params': model.image_model.parameters(), 'lr': config.IMAGE_LR},
-        {'params': model.text_proj.parameters(), 'lr': config.REGRESSOR_LR},
-        {'params': model.image_proj.parameters(), 'lr': config.REGRESSOR_LR},
-        {'params': model.regressor.parameters(), 'lr': config.REGRESSOR_LR}
+        {'params': model.text_model.parameters(), 'lr': config.TEXT_LR, 
+         'weight_decay': config.WEIGHT_DECAY},
+        {'params': model.image_model.parameters(), 'lr': config.IMAGE_LR, 
+         'weight_decay': config.WEIGHT_DECAY},
+        {'params': model.text_proj.parameters(), 'lr': config.REGRESSOR_LR, 
+         'weight_decay': config.WEIGHT_DECAY},
+        {'params': model.image_proj.parameters(), 'lr': config.REGRESSOR_LR, 
+         'weight_decay': config.WEIGHT_DECAY},
+        {'params': model.regressor.parameters(), 'lr': config.REGRESSOR_LR, 
+         'weight_decay': config.WEIGHT_DECAY}
     ])
+
+    scheduler = CosineAnnealingLR(
+        optimizer,
+        T_max=config.SCHEDULER_T_MAX,
+        eta_min=config.SCHEDULER_ETA_MIN)
     
     criterion = nn.L1Loss()
     
@@ -118,7 +136,8 @@ def train(config, train_dish_df, test_dish_df):
                 inputs = {
                     'input_ids': batch['input_ids'].to(device),
                     'attention_mask': batch['attention_mask'].to(device),
-                    'image': batch['image'].to(device)
+                    'image': batch['image'].to(device),
+                    'mass': batch['mass'].to(device)
                 }
                 targets = batch['calories'].to(device).float()
                 targets = targets.squeeze(-1)
@@ -132,6 +151,7 @@ def train(config, train_dish_df, test_dish_df):
                 # Backward
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 
                 batch_loss = loss.item()
                 total_loss += batch_loss
@@ -186,7 +206,8 @@ def validate(model, val_loader):
             inputs = {
                 'input_ids': batch['input_ids'].to(device),
                 'attention_mask': batch['attention_mask'].to(device),
-                'image': batch['image'].to(device)
+                'image': batch['image'].to(device),
+                'mass': batch['mass'].to(device)
             }
             targets = batch['calories'].to(device).float()
             targets = targets.squeeze(-1) ###########
@@ -199,7 +220,7 @@ def validate(model, val_loader):
     return mae_metric.compute().cpu().numpy() 
 
 
-def seed(config, test_dish_df):
+def inference(config, test_dish_df):
 
     all_calories = []
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -229,7 +250,8 @@ def seed(config, test_dish_df):
             inputs = {
                 'input_ids': batch['input_ids'].to(device),
                 'attention_mask': batch['attention_mask'].to(device),
-                'image': batch['image'].to(device)
+                'image': batch['image'].to(device),
+                'mass': batch['mass'].to(device)
             }
             targets = batch['calories'].to(device).float()
             targets = targets.squeeze(-1)

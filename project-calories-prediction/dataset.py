@@ -23,6 +23,7 @@ class MealDataset(Dataset):
     def __getitem__(self, idx):
         ingredients = self.df.iloc[idx]["ingredients"]
         calories = self.df.iloc[idx]["total_calories"]
+        mass = self.df.iloc[idx]["total_mass"]
 
         img_path = os.path.join(self.config.ROOT_PATH, self.config.IMAGES_PATH, 
                                 self.df.iloc[idx]["dish_id"], 'rgb.png')
@@ -30,19 +31,22 @@ class MealDataset(Dataset):
         image = Image.open(img_path).convert('RGB')
         image = self.transforms(image=np.array(image))["image"]
 
-        return {"calories": calories, "image": image, "text": ingredients}
+        return {"calories": calories, "mass": mass,
+                "image": image, "text": ingredients}
 
 
 def collate_fn(batch, tokenizer):
     texts = [item["text"] for item in batch]
     images = torch.stack([item["image"] for item in batch])
     calories = torch.FloatTensor([item["calories"] for item in batch])
+    mass = torch.FloatTensor([item["mass"] for item in batch])
 
     tokenized_input = tokenizer(texts,
                                 return_tensors="pt",
                                 padding="max_length",
                                 truncation=True)
     return {
+        "mass": mass,
         "calories": calories,
         "image": images,
         "input_ids": tokenized_input["input_ids"],
@@ -54,7 +58,7 @@ def get_transforms(config, ds_type="train"):
     if ds_type == "train":
         transforms  = A.Compose([
                 A.SmallestMaxSize(max_size=max(cfg.input_size[1], cfg.input_size[2]), p=1.0),
-                A.RandomCrop(height=cfg.input_size[1], width=cfg.input_size[2], p=1.0),
+                A.CenterCrop(height=cfg.input_size[1], width=cfg.input_size[2], p=1.0),
                 A.Affine(scale=(0.8, 1.2),
                         rotate=(-15, 15),
                         translate_percent=(-0.1, 0.1),
@@ -77,7 +81,7 @@ def get_transforms(config, ds_type="train"):
     else:
         transforms  = A.Compose([
                 A.SmallestMaxSize(max_size=max(cfg.input_size[1], cfg.input_size[2]), p=1.0),
-                A.RandomCrop(height=cfg.input_size[1], width=cfg.input_size[2], p=1.0),
+                A.CenterCrop(height=cfg.input_size[1], width=cfg.input_size[2], p=1.0),
                 A.Normalize(mean=cfg.mean, std=cfg.std),
                 ToTensorV2(p=1.0) #######################
             ])
